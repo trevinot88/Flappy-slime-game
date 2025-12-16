@@ -232,14 +232,27 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
-        // Socket.IO connection
-        const socket = io();
+        // Socket.IO connection with reconnection options
+        const socket = io({
+            reconnection: true,
+            reconnectionDelay: 1000,
+            reconnectionAttempts: 10,
+            transports: ['websocket', 'polling']
+        });
         
         // Connection status
         const connectionStatus = document.getElementById('connectionStatus');
+        
         socket.on('connect', () => {
             connectionStatus.textContent = '● Connected';
             connectionStatus.classList.remove('disconnected');
+            console.log('Connected to server');
+        });
+        
+        socket.on('connect_error', (error) => {
+            connectionStatus.textContent = '● Connection Error';
+            connectionStatus.classList.add('disconnected');
+            console.error('Connection error:', error);
         });
 
         socket.on('disconnect', () => {
