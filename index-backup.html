@@ -135,37 +135,31 @@
         <div id="ui">
             <div id="score" class="hidden">0</div>
             <div id="startScreen">
-                <h1>🌟 Sky Glider 2P</h1>
-                <p class="subtitle">Waiting for 2nd player...</p>
-                <p class="instructions" id="playerStatus">Connecting...</p>
+                <h1>🌟 Sky Glider</h1>
+                <p class="subtitle">A Beautiful Flying Adventure</p>
+                <button id="startBtn">Start Game</button>
+                <p class="instructions">Press SPACE or click to fly</p>
             </div>
             <div id="gameOverScreen" class="hidden">
                 <h1>Game Over</h1>
                 <div id="finalScore">Score: 0</div>
-                <div id="winnerText"></div>
-                <button id="restartBtn">New Game</button>
+                <div id="highScore">Best: 0</div>
+                <button id="restartBtn">Play Again</button>
             </div>
         </div>
     </div>
 
-    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
     <script>
-        // Socket.IO
-        const socket = io({ transports: ['polling', 'websocket'] });
-        let myPlayerId = null;
-        let myPlayerNumber = null;
-        let isHost = false;
-        
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
 
         // Game state
-        let gameState = 'waiting'; // waiting, playing, gameOver
+        let gameState = 'start'; // start, playing, gameOver
         let score = 0;
-        let opponentScore = 0;
+        let highScore = localStorage.getItem('highScore') || 0;
         let frame = 0;
 
-        // Bird properties - ME
+        // Bird properties
         const bird = {
             x: 100,
             y: canvas.height / 2,
@@ -174,17 +168,7 @@
             jumpStrength: -9,
             radius: 20,
             rotation: 0,
-            alive: true
-        };
-        
-        // Opponent bird
-        const opponent = {
-            x: 100,
-            y: canvas.height / 2,
-            velocity: 0,
-            radius: 20,
-            rotation: 0,
-            alive: true
+            trail: []
         };
 
         // Pipes
@@ -203,8 +187,7 @@
 
         // Colors - Super Mario Bros theme
         const colors = {
-            myBird: '#FFC107',  // Yellow - Player 1
-            opponentBird: '#2196F3',  // Blue - Player 2
+            bird: '#FFC107',
             birdAccent: '#FF5722',
             pipe: '#5CB85C',
             pipeDark: '#4A934A',
@@ -334,18 +317,18 @@
         }
 
         // Draw bird - Mario style
-        function drawBirdShape(x, y, rotation, color, wingColor) {
+        function drawBird() {
             ctx.save();
-            ctx.translate(x + shake.x, y + shake.y);
-            ctx.rotate(rotation);
+            ctx.translate(bird.x + shake.x, bird.y + shake.y);
+            ctx.rotate(bird.rotation);
 
-            // Bird body
-            ctx.fillStyle = color;
+            // Bird body (yellow/gold like a coin or star)
+            ctx.fillStyle = colors.bird;
             ctx.beginPath();
-            ctx.arc(0, 0, 20, 0, Math.PI * 2);
+            ctx.arc(0, 0, bird.radius, 0, Math.PI * 2);
             ctx.fill();
 
-            // Red accent
+            // Red accent (like Mario's hat)
             ctx.fillStyle = colors.birdAccent;
             ctx.beginPath();
             ctx.arc(0, -8, 12, 0, Math.PI, true);
@@ -353,7 +336,7 @@
 
             // Wing
             const wingAngle = Math.sin(frame * 0.3) * 0.3;
-            ctx.fillStyle = wingColor;
+            ctx.fillStyle = '#FFA726';
             ctx.beginPath();
             ctx.ellipse(-5, 0, 15, 10, wingAngle, 0, Math.PI * 2);
             ctx.fill();
@@ -370,17 +353,6 @@
             ctx.fill();
 
             ctx.restore();
-        }
-        
-        function drawBirds() {
-            // Draw opponent first (behind)
-            if (opponent.alive) {
-                drawBirdShape(opponent.x, opponent.y, opponent.rotation, colors.opponentBird, '#64B5F6');
-            }
-            // Draw my bird on top
-            if (bird.alive) {
-                drawBirdShape(bird.x, bird.y, bird.rotation, colors.myBird, '#FFA726');
-            }
         }
 
         // Draw pipes - Mario style
@@ -428,24 +400,13 @@
 
         // Update bird physics
         function updateBird() {
-            if (!bird.alive) return;
-            
             bird.velocity += bird.gravity;
             bird.y += bird.velocity;
             bird.rotation = Math.min(Math.max(bird.velocity / 20, -0.5), 0.5);
-            
-            // Send position to opponent
-            socket.emit('birdUpdate', {
-                y: bird.y,
-                velocity: bird.velocity,
-                rotation: bird.rotation
-            });
         }
 
         // Update pipes
         function updatePipes() {
-            if (!isHost) return; // Only host updates pipes
-            
             pipeTimer++;
             
             if (pipeTimer > 90) {
@@ -460,21 +421,17 @@
                     bottom: top + pipeGap,
                     scored: false
                 });
-                
-                // Sync pipes to other player
-                socket.emit('pipeSync', pipes);
             }
 
             pipes.forEach(pipe => {
                 pipe.x -= pipeSpeed;
 
-                // Score for me
-                if (!pipe.scored && pipe.x + pipeWidth < bird.x && bird.alive) {
+                // Score
+                if (!pipe.scored && pipe.x + pipeWidth < bird.x) {
                     pipe.scored = true;
                     score++;
                     playSound('score');
-                    document.getElementById('score').textContent = `You: ${score} | Opponent: ${opponentScore}`;
-                    socket.emit('scoreUpdate', score);
+                    document.getElementById('score').textContent = score;
                 }
             });
 
@@ -483,14 +440,9 @@
 
         // Check collisions
         function checkCollisions() {
-            if (!bird.alive) return;
-            
             // Ground and ceiling
             if (bird.y - bird.radius < 0 || bird.y + bird.radius > canvas.height) {
-                bird.alive = false;
-                socket.emit('playerDied');
-                playSound('hit');
-                shake.intensity = 10;
+                endGame();
                 return;
             }
 
@@ -498,10 +450,7 @@
             pipes.forEach(pipe => {
                 if (bird.x + bird.radius > pipe.x && bird.x - bird.radius < pipe.x + pipeWidth) {
                     if (bird.y - bird.radius < pipe.top || bird.y + bird.radius > pipe.bottom) {
-                        bird.alive = false;
-                        socket.emit('playerDied');
-                        playSound('hit');
-                        shake.intensity = 10;
+                        endGame();
                     }
                 }
             });
@@ -511,85 +460,52 @@
 
         // Jump action
         function jump() {
-            if (gameState === 'playing' && bird.alive) {
+            if (gameState === 'playing') {
                 bird.velocity = bird.jumpStrength;
                 playSound('jump');
             }
         }
 
-        // Socket events
-        socket.on('playerJoined', (data) => {
-            myPlayerId = data.playerId;
-            myPlayerNumber = data.playerNumber;
-            isHost = myPlayerNumber === 1;
-            document.getElementById('playerStatus').textContent = `Player ${myPlayerNumber} - Waiting for ${3 - myPlayerNumber}nd player...`;
-        });
-        
-        socket.on('newPlayer', (data) => {
-            document.getElementById('playerStatus').textContent = `Both players ready!`;
-        });
-        
-        socket.on('startGame', () => {
+        // Start game
+        function startGame() {
             gameState = 'playing';
             score = 0;
-            opponentScore = 0;
             bird.y = canvas.height / 2;
             bird.velocity = 0;
-            bird.alive = true;
-            opponent.y = canvas.height / 2;
-            opponent.alive = true;
             pipes = [];
             pipeTimer = 0;
+            speedTimer = 0;
+            speedMultiplier = 1;
+            pipeSpeed = basePipeSpeed;
             timeOfDay = 'day';
             
             document.getElementById('startScreen').classList.add('hidden');
             document.getElementById('gameOverScreen').classList.add('hidden');
             document.getElementById('score').classList.remove('hidden');
-            document.getElementById('score').textContent = 'You: 0 | Opponent: 0';
-        });
-        
-        socket.on('opponentBird', (data) => {
-            opponent.y = data.y;
-            opponent.rotation = data.rotation;
-        });
-        
-        socket.on('pipesUpdate', (pipesData) => {
-            pipes = pipesData;
-        });
-        
-        socket.on('scoresUpdate', (data) => {
-            if (data.playerId !== myPlayerId) {
-                opponentScore = data.score;
-                document.getElementById('score').textContent = `You: ${score} | Opponent: ${opponentScore}`;
-            }
-        });
-        
-        socket.on('gameOver', (data) => {
+            document.getElementById('score').textContent = '0';
+        }
+
+        // End game
+        function endGame() {
             gameState = 'gameOver';
-            opponent.alive = false;
+            playSound('hit');
             
+            // Camera shake
+            shake.intensity = 10;
+            
+            // Update high score
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('highScore', highScore);
+            }
+
             setTimeout(() => {
                 document.getElementById('score').classList.add('hidden');
                 document.getElementById('gameOverScreen').classList.remove('hidden');
-                
-                if (data.winnerId === myPlayerId) {
-                    document.getElementById('winnerText').textContent = '🏆 You Win!';
-                    document.getElementById('finalScore').textContent = `Your Score: ${score}`;
-                } else {
-                    document.getElementById('winnerText').textContent = '😢 You Lose!';
-                    document.getElementById('finalScore').textContent = `Your Score: ${score}`;
-                }
-            }, 1000);
-        });
-        
-        socket.on('playerLeft', () => {
-            alert('Other player left!');
-            location.reload();
-        });
-        
-        socket.on('roomFull', () => {
-            alert('Room is full! Only 2 players allowed.');
-        });
+                document.getElementById('finalScore').textContent = `Score: ${score}`;
+                document.getElementById('highScore').textContent = `Best: ${highScore}`;
+            }, 500);
+        }
 
         // Update camera shake
         function updateShake() {
@@ -613,28 +529,56 @@
                 updateBird();
                 updatePipes();
                 checkCollisions();
+                
+                // Increase speed every 30 seconds (1800 frames at 60fps)
+                speedTimer++;
+                if (speedTimer >= 1800) {
+                    speedTimer = 0;
+                    speedMultiplier *= 1.05;
+                    pipeSpeed = basePipeSpeed * speedMultiplier;
+                    
+                    // Cycle through times of day
+                    if (timeOfDay === 'day') {
+                        timeOfDay = 'sunset';
+                    } else if (timeOfDay === 'sunset') {
+                        timeOfDay = 'night';
+                    } else if (timeOfDay === 'night') {
+                        timeOfDay = 'sunrise';
+                    } else if (timeOfDay === 'sunrise') {
+                        timeOfDay = 'day';
+                    }
+                }
             }
             
             drawPipes();
-            drawBirds();
+            drawBird();
             updateShake();
             
             requestAnimationFrame(gameLoop);
         }
 
         // Event listeners
-        document.getElementById('restartBtn').addEventListener('click', () => {
-            location.reload();
-        });
+        document.getElementById('startBtn').addEventListener('click', startGame);
+        document.getElementById('restartBtn').addEventListener('click', startGame);
 
         document.addEventListener('keydown', (e) => {
             if (e.code === 'Space') {
                 e.preventDefault();
-                jump();
+                if (gameState === 'start') {
+                    startGame();
+                } else {
+                    jump();
+                }
             }
         });
 
-        canvas.addEventListener('click', jump);
+        canvas.addEventListener('click', () => {
+            if (gameState === 'start') {
+                startGame();
+            } else {
+                jump();
+            }
+        });
 
         // Start game loop
         gameLoop();
