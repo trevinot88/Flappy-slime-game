@@ -18,11 +18,27 @@ const io = socketIO(server, {
 
 const PORT = process.env.PORT || 3000;
 
+console.log('=================================');
+console.log('Starting Flappy Bird Multiplayer Server...');
+console.log('Environment:', process.env.NODE_ENV || 'development');
+console.log('Port:', PORT);
+console.log('=================================');
+
 // Serve static files
 app.use(express.static(__dirname));
 
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.status(200).json({ 
+        status: 'OK',
+        activeGames: games.size,
+        waitingPlayers: waitingPlayers.length,
+        timestamp: new Date().toISOString()
+    });
 });
 
 // Game state
@@ -109,23 +125,25 @@ class Game {
 
 // Socket.IO connection handling
 io.on('connection', (socket) => {
-    console.log(`Player connected: ${socket.id}`);
+    console.log(`[${new Date().toISOString()}] ✓ Player connected: ${socket.id}`);
 
     // Send waiting status
     socket.emit('connected', { playerId: socket.id });
 
     // Player wants to find a match
     socket.on('findMatch', () => {
-        console.log(`Player ${socket.id} searching for match...`);
+        console.log(`[${new Date().toISOString()}] 🔍 Player ${socket.id} searching for match...`);
         
         // Check if already in queue
         if (waitingPlayers.includes(socket.id)) {
+            console.log(`[${new Date().toISOString()}] ⚠️  Player ${socket.id} already in queue`);
             return;
         }
 
         // Add to waiting queue
         waitingPlayers.push(socket.id);
         socket.emit('searching');
+        console.log(`[${new Date().toISOString()}] 📋 Queue size: ${waitingPlayers.length}`);
 
         // Try to match with another player
         if (waitingPlayers.length >= 2) {
@@ -157,7 +175,8 @@ io.on('connection', (socket) => {
                     }
                 });
 
-                console.log(`Match created: ${game.id}`);
+                console.log(`[${new Date().toISOString()}] 🎮 Match created: ${game.id}`);
+                console.log(`[${new Date().toISOString()}] 👥 Players: ${player1Id.substring(0,8)} vs ${player2Id.substring(0,8)}`);
             }
         }
     });
@@ -176,7 +195,7 @@ io.on('connection', (socket) => {
                     io.to(roomId).emit('gameStart', {
                         timestamp: Date.now()
                     });
-                    console.log(`Game started: ${roomId}`);
+                    console.log(`[${new Date().toISOString()}] 🚀 Game started: ${roomId}`);
                 }
             }
         }
@@ -245,7 +264,7 @@ io.on('connection', (socket) => {
                             Object.entries(game.players).map(([id, p]) => [id, p.score])
                         )
                     });
-                    console.log(`Game over: ${roomId}, Winner: ${winnerId}`);
+                    console.log(`[${new Date().toISOString()}] 🏁 Game over: ${roomId}, Winner: ${winnerId.substring(0,8)}`);
                 }
             }
         }
@@ -253,7 +272,7 @@ io.on('connection', (socket) => {
 
     // Handle disconnect
     socket.on('disconnect', () => {
-        console.log(`Player disconnected: ${socket.id}`);
+        console.log(`[${new Date().toISOString()}] ✗ Player disconnected: ${socket.id}`);
         
         // Remove from waiting queue
         const waitingIndex = waitingPlayers.indexOf(socket.id);
@@ -288,8 +307,37 @@ io.on('connection', (socket) => {
 
 // Start server
 server.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Multiplayer Flappy Bird server running on port ${PORT}`);
-    console.log(`🎮 Access at http://localhost:${PORT}`);
+    console.log('=================================');
+    console.log(`✓ Server running on port ${PORT}`);
+    console.log(`✓ Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`✓ Time: ${new Date().toISOString()}`);
+    console.log('=================================');
+});
+
+// Error handling
+server.on('error', (error) => {
+    console.error('✗ Server error:', error);
+});
+
+io.on('error', (error) => {
+    console.error('✗ Socket.IO error:', error);
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+    console.log('SIGTERM signal received: closing HTTP server');
+    server.close(() => {
+        console.log('HTTP server closed');
+        process.exit(0);
+    });
+});
+
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught Exception:', error);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
 // Cleanup old games periodically
