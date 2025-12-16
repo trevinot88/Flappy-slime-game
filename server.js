@@ -287,7 +287,7 @@ io.on('connection', (socket) => {
 });
 
 // Start server
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Multiplayer Flappy Bird server running on port ${PORT}`);
     console.log(`🎮 Access at http://localhost:${PORT}`);
 });
