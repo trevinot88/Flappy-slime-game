@@ -37,6 +37,8 @@ io.on('connection', (socket) => {
         score: 0
     };
     
+    console.log(`Player ${playerNumber} joined. Total players: ${Object.keys(gameRoom.players).length}`);
+    
     socket.emit('playerJoined', { 
         playerId: socket.id,
         playerNumber: playerNumber,
@@ -50,12 +52,16 @@ io.on('connection', (socket) => {
     });
     
     // Start game when 2 players
-    if (Object.keys(gameRoom.players).length === 2) {
+    const currentPlayers = Object.keys(gameRoom.players).length;
+    console.log(`Checking player count: ${currentPlayers}`);
+    
+    if (currentPlayers === 2) {
+        console.log('Starting game with 2 players!');
         setTimeout(() => {
             gameRoom.gameStarted = true;
             io.emit('startGame');
-            console.log('Game started with 2 players');
-        }, 1000);
+            console.log('Game start signal sent to all players');
+        }, 1500);
     }
     
     // Bird position update
