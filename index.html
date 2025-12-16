@@ -232,12 +232,15 @@
 
     <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
     <script>
-        // Socket.IO connection with reconnection options
+        // Socket.IO connection with polling fallback for Render
         const socket = io({
             reconnection: true,
             reconnectionDelay: 1000,
             reconnectionAttempts: 10,
-            transports: ['websocket', 'polling']
+            transports: ['polling', 'websocket'], // Try polling first
+            upgrade: true,
+            forceNew: true,
+            timeout: 20000
         });
         
         // Connection status

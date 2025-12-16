@@ -5,15 +5,21 @@ const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
+
+// Configure Socket.IO for Render deployment
 const io = socketIO(server, {
     cors: {
         origin: "*",
-        methods: ["GET", "POST"]
+        methods: ["GET", "POST"],
+        credentials: true
     },
-    transports: ['websocket', 'polling'],
-    allowEIO3: true,
-    pingTimeout: 60000,
-    pingInterval: 25000
+    transports: ['polling', 'websocket'],
+    allowUpgrades: true,
+    pingTimeout: 120000,
+    pingInterval: 25000,
+    connectTimeout: 45000,
+    path: '/socket.io/',
+    serveClient: false
 });
 
 const PORT = process.env.PORT || 3000;
@@ -23,6 +29,9 @@ console.log('Starting Flappy Bird Multiplayer Server...');
 console.log('Environment:', process.env.NODE_ENV || 'development');
 console.log('Port:', PORT);
 console.log('=================================');
+
+// IMPORTANT: Trust proxy for Render
+app.set('trust proxy', 1);
 
 // Serve static files
 app.use(express.static(__dirname));
